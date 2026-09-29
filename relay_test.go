@@ -638,6 +638,18 @@ func TestRelayConnection(t *testing.T) {
 		_, err = ts.Relay().Connect(ctx, listeningHBSvc.PeerInfo().HostPort)
 		require.NoError(t, err, "Failed to connect from relay to listening host:port")
 
+		// Connect returns once the relay side is active; wait for listeningHBSvc
+		// to register its inbound side too, otherwise the call below may dial a
+		// new outbound connection instead of reusing this one.
+		require.True(t, testutils.WaitFor(time.Second, func() bool {
+			for _, peer := range listeningHBSvc.IntrospectState(nil).RootPeers {
+				if len(peer.InboundConnections) > 0 {
+					return true
+				}
+			}
+			return false
+		}), "listeningHBSvc did not register the inbound connection from the relay")
+
 		// Now when listeningHBSvc makes a call, it should use the above connection.
 		err = testutils.CallEcho(listeningHBSvc, ts.HostPort(), ts.ServiceName(), nil)
 		require.Error(t, err, "Expected CallEcho to fail")
